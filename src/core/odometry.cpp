@@ -23,6 +23,7 @@ SOFTWARE.
 */
 
 #include <trajlo/core/odometry.h>
+#include <trajlo/io/registered_scans_writer.h>
 #include <trajlo/utils/sophus_utils.hpp>
 
 #include <fstream>
@@ -55,6 +56,10 @@ TrajLOdometry::TrajLOdometry(const TrajConfig& config)
   marg_b.setZero(POSE_SIZE);
   double init_pose_weight = config.init_pose_weight;
   marg_H.diagonal().setConstant(init_pose_weight);
+
+  if (!config.registered_scans_path.empty())
+    registered_scans_.reset(
+        new RegisteredScansWriter(config.registered_scans_path));
 }
 
 void TrajLOdometry::Start() {
@@ -70,6 +75,9 @@ void TrajLOdometry::Start() {
        * */
       laser_data_queue.pop(curr_scan);
       if (!curr_scan.get()) break;
+      if (registered_scans_)  // LIO Bench output patch
+        registered_scans_->AddScan(curr_scan->points.front().ts,
+                                   curr_scan->timestamp);
 
       if (first_scan) {
         last_begin_t_ns_ = curr_scan->timestamp;
@@ -96,6 +104,8 @@ void TrajLOdometry::Start() {
               PoseStateWithLin<double>(tp.second, T_wc_curr, true);
           trajectory_.emplace_back(tp.first, T_wc_curr);
           map_->SetInit();
+          // LIO Bench output patch: the map is initialized with this segment as is
+          ExportRegisteredPoints(measure->points, {T_wc_curr, T_wc_curr});
 
           T_prior = Sophus::SE3d();
         } else {
@@ -124,6 +134,15 @@ void TrajLOdometry::Start() {
           T_prior = frame_poses_[tp.first].getPose().inverse() *
                     frame_poses_[tp.second].getPose();
 
+          // LIO Bench output patch: export the oldest segment with the final
+          // poses Marginalize() is about to fix
+          if (measurements.size() >= max_frames_) {
+            const auto& tp_old = measurements.begin()->first;
+            ExportRegisteredPoints(measurements.begin()->second->points,
+                                   {frame_poses_[tp_old.first].getPose(),
+                                    frame_poses_[tp_old.second].getPose()});
+          }
+
           // 4. marginalize the oldest segment and update the map using points
           // belond to the oldest segment.
           Marginalize();
@@ -146,6 +165,14 @@ void TrajLOdometry::Start() {
     }
 
     if (vis_data_queue) vis_data_queue->push(nullptr);
+
+    // LIO Bench output patch: export the segments left in the window
+    for (const auto& m : measurements) {
+      ExportRegisteredPoints(m.second->points,
+                             {frame_poses_[m.first.first].getPose(),
+                              frame_poses_[m.first.second].getPose()});
+    }
+    if (registered_scans_) registered_scans_->Close();
 
     // save pose in window
     for (const auto& kv : frame_poses_) {
@@ -407,6 +434,28 @@ void TrajLOdometry::UndistortRawPoints(std::vector<PointXYZIT>& pc_in,
       pc_out.emplace_back(po);
     }
     i++;
+  }
+}
+
+// LIO Bench output patch. UndistortRawPoints() keeps no point time, so each
+// point's index rides through it in the intensity to recover the time (which
+// scan it belongs to) and the real intensity.
+void TrajLOdometry::ExportRegisteredPoints(
+    const std::vector<PointXYZIT>& points, const posePair& pp) {
+  if (!registered_scans_ || points.size() < 2 ||
+      points.size() > (1u << 24))  // float carries indexes exactly up to 2^24
+    return;
+  std::vector<PointXYZIT> indexed(points);
+  for (size_t i = 0; i < indexed.size(); ++i)
+    indexed[i].intensity = static_cast<float>(i);
+  std::vector<PointXYZI> undistorted;
+  UndistortRawPoints(indexed, undistorted, pp);  // in the frame of pp.first
+
+  const Sophus::SE3f T_w_b = pp.first.cast<float>();
+  for (const auto& u : undistorted) {
+    const auto& raw = points[static_cast<size_t>(u.intensity)];
+    registered_scans_->AddPoint(raw.ts, T_w_b * Eigen::Vector3f(u.x, u.y, u.z),
+                                raw.intensity);
   }
 }
 

@@ -36,6 +36,9 @@ namespace traj {
 
         save_pose=config["dataset"]["save_pose"].as<bool>();
         pose_file_path=config["dataset"]["pose_file_path"].as<std::string>();
+        // LIO Bench: optional Registered Scans output
+        if (config["dataset"]["registered_scans_path"])
+          registered_scans_path = config["dataset"]["registered_scans_path"].as<std::string>();
 
         // read calibration config
         time_offset=config["calibration"]["time_offset"].as<double>();

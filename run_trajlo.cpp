@@ -33,9 +33,11 @@ int main(int argc, char *argv[]) {
   std::cout << "Hello Traj-LO Project!\n";
 
   if (argc < 2) {
-    std::cerr << "Usage: " << argv[0] << " <config_path>" << std::endl;
+    std::cerr << "Usage: " << argv[0] << " <config_path> [--headless]" << std::endl;
     return 1;
   }
+  // LIO Bench startup patch: --headless runs the whole bag with no GUI, then exits.
+  const bool headless = argc > 2 && std::string(argv[2]) == "--headless";
 
   std::string config_path = argv[1];
 
@@ -46,6 +48,14 @@ int main(int argc, char *argv[]) {
   traj::DataLoader::Ptr dataLoader = nullptr;
   std::thread t_io;
   dataLoader = traj::DatasetFactory::GetDatasetIo(config.type);
+  if (headless) {
+    dataLoader->laser_queue = &trajLOdometry->laser_data_queue;
+    trajLOdometry->Start();
+    dataLoader->start();
+    dataLoader->publish(config.dataset_path, config.topic);  // to the bag's end
+    trajLOdometry.reset();  // joins the odometry thread, which saves the poses
+    return 0;
+  }
   t_io = std::thread(&traj::DataLoader::publish, dataLoader,
                      config.dataset_path, config.topic);
 

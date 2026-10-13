@@ -40,6 +40,8 @@ SOFTWARE.
 #include <trajlo/core/map_manager.h>
 
 namespace traj {
+class RegisteredScansWriter;
+
 class TrajLOdometry {
  public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -59,6 +61,10 @@ class TrajLOdometry {
   void RangeFilter(Measurement::Ptr measure, std::vector<Eigen::Vector4d>& points);
   void UndistortRawPoints(std::vector<PointXYZIT>& pc_in,
                           std::vector<PointXYZI>& pc_out, const posePair& pp) ;
+  // LIO Bench output patch: hands a segment's UndistortRawPoints() output, in
+  // the world frame, to the Registered Scans writer.
+  void ExportRegisteredPoints(const std::vector<PointXYZIT>& points,
+                              const posePair& pp);
 
   tbb::concurrent_bounded_queue<Scan::Ptr> laser_data_queue;
   std::atomic<bool> isFinish;  // for feed data thread join
@@ -98,6 +104,7 @@ class TrajLOdometry {
   Eigen::VectorXd marg_b;
 
   TrajConfig config_;
+  std::shared_ptr<RegisteredScansWriter> registered_scans_;  // LIO Bench
 
   // backend thread
 //  bool initialized_;

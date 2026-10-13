@@ -42,6 +42,7 @@ struct TrajConfig {
 
   bool save_pose;
   std::string pose_file_path;
+  std::string registered_scans_path;  // LIO Bench: empty = no export
 
   // calibration:
   double time_offset;
