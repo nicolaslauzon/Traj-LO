@@ -451,10 +451,12 @@ void TrajLOdometry::ExportRegisteredPoints(
   std::vector<PointXYZI> undistorted;
   UndistortRawPoints(indexed, undistorted, pp);  // in the frame of pp.first
 
-  const Sophus::SE3f T_w_b = pp.first.cast<float>();
+  // Into the body world frame, the one the saved poses use
+  // (T_body_lidar * T_w_lidar * T_body_lidar^-1): p_body_world = T_body_lidar * p_lidar_world.
+  const Sophus::SE3f T_bw_l = (config_.T_body_lidar * pp.first).cast<float>();
   for (const auto& u : undistorted) {
     const auto& raw = points[static_cast<size_t>(u.intensity)];
-    registered_scans_->AddPoint(raw.ts, T_w_b * Eigen::Vector3f(u.x, u.y, u.z),
+    registered_scans_->AddPoint(raw.ts, T_bw_l * Eigen::Vector3f(u.x, u.y, u.z),
                                 raw.intensity);
   }
 }
