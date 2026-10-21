@@ -71,8 +71,12 @@ class MapManager {
   struct VoxelHash {
     size_t operator()(const Voxel &voxel) const {
       const uint32_t *vec = reinterpret_cast<const uint32_t *>(voxel.data());
-      return ((1 << 20) - 1) &
-             (vec[0] * 73856093 ^ vec[1] * 19349663 ^ vec[2] * 83492791);
+      // LIO Bench fix: no 20-bit mask. With every hash below 2^20, robin_map
+      // past ~1M voxels hits its probe limit on each insert and doubles its
+      // table without end (tens of GB).
+      return static_cast<size_t>(vec[0]) * 73856093 ^
+             static_cast<size_t>(vec[1]) * 19349663 ^
+             static_cast<size_t>(vec[2]) * 83492791;
     }
   };
 
